@@ -1,0 +1,32 @@
+name: Publier la version web
+on:
+  push:
+    branches: [main]
+    paths: ['*.zip']
+  workflow_dispatch:
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: true
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploiement.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decompresser le zip le plus recent
+        run: |
+          ZIP=$(ls veille-web-*.zip | sort -V | tail -n 1)
+          mkdir site && unzip -q "$ZIP" -d site
+          test -f site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deploiement
+        uses: actions/deploy-pages@v4
