@@ -1,4 +1,4 @@
-name: Diagnostic sources outre-mer
+name: Diagnostic sources
 # Manuel uniquement : affiche des chiffres, ne publie rien.
 on:
   workflow_dispatch:
