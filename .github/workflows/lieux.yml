@@ -1,0 +1,36 @@
+name: Lieux (boulangeries et stations)
+
+# Chaque nuit : lit les référentiels BOULANGERIES-FRANCE et STATIONS-TOTAL-FRANCE (sans les modifier),
+# les découpe en petites tuiles géographiques et les publie sur la branche « lieux » (lue par l'appli). Gratuit, sans clé.
+on:
+  schedule:
+    - cron: '40 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: lieux
+  cancel-in-progress: true
+
+jobs:
+  lieux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Découpage
+        run: node outils/lieux.mjs sortie
+      - name: Publication sur la branche lieux
+        run: |
+          cd sortie
+          git init -q -b lieux
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Lieux du $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" lieux
