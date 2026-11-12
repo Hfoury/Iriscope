@@ -7,7 +7,7 @@ const ZONES = [
   ['Guadeloupe', 16.25, -61.55, 60], ['Martinique', 14.65, -61.0, 45], ['Guyane', 4.9, -52.9, 250],
   ['La Réunion', -21.13, 55.53, 50], ['Mayotte', -12.82, 45.15, 30], ['Saint-Pierre-et-Miquelon', 46.95, -56.3, 60],
   ['Saint-Martin / Saint-Barthélemy', 18.0, -62.95, 30], ['Nouvelle-Calédonie', -21.3, 165.6, 300], ['Polynésie (Tahiti)', -17.6, -149.5, 150],
-  ['Wallis-et-Futuna', -13.75, -177.2, 250], ['Corse', 42.15, 9.1, 110], ['Finistère (repère)', 48.25, -4.1, 60],
+  ['Wallis-et-Futuna', -13.75, -177.2, 250], ['Corse', 42.15, 9.1, 110], ['Paris (10 km)', 48.8566, 2.3522, 10], ['Lyon (10 km)', 45.76, 4.84, 10], ['Marseille (10 km)', 43.3, 5.38, 10], ['Finistère (repère)', 48.25, -4.1, 60],
 ];
 const ODS = 'https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/evenements-publics-openagenda/records';
 for (const [name, lat, lon, km] of ZONES) {
@@ -31,3 +31,10 @@ for (const [name, lat, lon, km] of ZONES) {
   console.log(`${name} | OpenAgenda 30 j : ${oa} | DATAtourisme 30 j : ${dt} (toutes dates : ${dtAll})`);
   if (agendas) console.log(`   agendas : ${agendas}`);
 }
+
+// Paris a aussi son propre agenda en données ouvertes (« Que faire à Paris », licence ODbL)
+try {
+  const u = 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-/records?limit=0&where=' + encodeURIComponent(`date_end >= date'${from}' AND date_start <= date'${to}'`);
+  const j = await (await fetch(u)).json();
+  console.log('Que faire à Paris (opendata.paris.fr) 30 j :', j.total_count ?? JSON.stringify(j).slice(0, 200));
+} catch (e) { console.log('Que faire à Paris : erreur', e.message); }
