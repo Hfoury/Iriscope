@@ -1,0 +1,18 @@
+name: Diagnostic sources outre-mer
+# Manuel uniquement : affiche des chiffres, ne publie rien.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - env:
+          DATATOURISME_KEY: ${{ secrets.DATATOURISME_KEY }}
+        run: node outils/diagnostic.mjs
