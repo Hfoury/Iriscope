@@ -17,7 +17,13 @@ async function get(url) {
     catch (e) { if (k >= 3) throw e; await new Promise(r => setTimeout(r, 5000 * (k + 1))); }
   }
 }
-const place = x => [clean(x.adresse), [clean(x.code_postal), clean(x.commune)].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+// l'adresse du référentiel contient parfois déjà le code postal et la commune (« 6, Rue X, 10000, Troyes ») : on ne les répète pas
+const place = x => {
+  const cp = clean(x.code_postal), city = clean(x.commune);
+  let a = clean(x.adresse);
+  if (cp) a = a.split(',').map(v => v.trim()).filter(v => v && v !== cp && v.toLowerCase() !== city.toLowerCase()).join(', ').replace(/^(\d+[a-z]?), /i, '$1 ');
+  return [a, [cp, city].filter(Boolean).join(' ')].filter(Boolean).join(', ');
+};
 function write(kind, items, updated) {
   const by = {};
   for (const it of items) (by[tile(it.lat, it.lon)] ||= []).push(it);
