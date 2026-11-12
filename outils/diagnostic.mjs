@@ -1,11 +1,13 @@
-// Diagnostic manuel : structure des agendas ouverts de Paris et de Bordeaux Métropole (un exemple de chaque).
-// N'écrit rien, affiche seulement.
-const show = async (label, url) => { try { const r = await fetch(url, { signal: AbortSignal.timeout(20000) }); const t = await r.text(); console.log(`\n== ${label} (HTTP ${r.status})\n${t.slice(0, 3500)}`); } catch (e) { console.log(`\n== ${label} : erreur ${e.message}`); } };
-const day = new Date().toISOString().slice(0, 10);
-await show('Paris, exemple', 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-/records?limit=1&where=' + encodeURIComponent(`date_end >= date'${day}'`));
-await show('Paris, licence', 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-?select=metas');
-await show('Paris, près de Bastille 2 km', 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-/records?limit=0&where=' + encodeURIComponent(`within_distance(lat_lon, geom'POINT(2.369 48.853)', 2km) AND date_end >= date'${day}'`));
-for (const d of ['met_agenda', 'tal_agenda', 'ci_evenmt_p']) {
-  await show(`Bordeaux ${d}, fiche`, `https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/${d}?select=dataset_id,metas`);
-  await show(`Bordeaux ${d}, exemple`, `https://opendata.bordeaux-metropole.fr/api/explore/v2.1/catalog/datasets/${d}/records?limit=1`);
+// Diagnostic manuel : champs de l'agenda ouvert de Paris (hors textes longs) et test de la requête de l'appli. N'écrit rien.
+const day = n => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10);
+const base = 'https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-/records';
+const where = `within_distance(lat_lon, geom'POINT(2.369 48.853)', 3km) AND date_end >= date'${day(0)}' AND date_start <= date'${day(14)}'`;
+const r = await fetch(`${base}?limit=3&offset=0&order_by=${encodeURIComponent('date_start desc')}&where=${encodeURIComponent(where)}`);
+const j = await r.json();
+console.log('HTTP', r.status, 'total', j.total_count, j.message || '');
+for (const rec of j.results || []) {
+  const o = {}; for (const [k, v] of Object.entries(rec)) o[k] = typeof v === 'string' && v.length > 160 ? v.slice(0, 160) + '…' : v;
+  console.log(JSON.stringify(o, null, 1));
 }
+const m = await (await fetch('https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-')).json();
+console.log('Licence :', JSON.stringify(m.metas && m.metas.default && { license: m.metas.default.license, license_url: m.metas.default.license_url, publisher: m.metas.default.publisher, modified: m.metas.default.modified }));
