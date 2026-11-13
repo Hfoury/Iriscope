@@ -117,30 +117,23 @@ try {
   console.log(`Top 14 : ${all.length} matchs lus, ${matches.length} gardés, ${matches.filter(m => m.score).length} avec score`);
 } catch (e) { console.log(`Top 14 : échec (${e.message})`); }
 
-// ---------- EuroMillions : historique officiel publié en CSV par la loterie nationale britannique (mêmes numéros dans tous les pays) ----------
+// ---------- EuroMillions : dernier tirage publié par la loterie nationale britannique (mêmes numéros dans tous les pays) ----------
+// L'adresse ne donne que le dernier tirage : on l'ajoute à ceux déjà publiés sur la branche « scores ».
 // Le Loto français n'a pas de source ouverte : ses numéros restent à taper par un membre du groupe.
+let draws = [];
+try { const old = await get('https://raw.githubusercontent.com/Hfoury/iriscope/scores/scores/index.json'); draws = old.draws || []; } catch (e) { /* première fois */ }
 try {
-  const csv = await get('https://www.national-lottery.co.uk/results/euromillions/draw-history/csv', false);
-  const [head, ...rows] = csv.trim().split(/\r?\n/);
-  const cols = head.split(',').map(c => c.trim().toLowerCase());
-  const at = re => cols.findIndex(c => re.test(c));
-  const iDate = at(/date/), iBalls = cols.map((c, i) => (/^ball/.test(c) ? i : -1)).filter(i => i >= 0), iStars = cols.map((c, i) => (/star/.test(c) ? i : -1)).filter(i => i >= 0);
-  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
-  const draws = [];
-  for (const r of rows) {
-    const c = r.split(',').map(x => x.trim());
-    const m = (c[iDate] || '').match(/(\d{1,2})[-\s/]([A-Za-z]{3})[a-z]*[-\s/](\d{4})/);
-    if (!m || !MON[m[2].toLowerCase()]) continue;
-    const nums = iBalls.map(i => +c[i]).filter(Boolean).sort((a, b) => a - b), extra = iStars.map(i => +c[i]).filter(Boolean).sort((a, b) => a - b);
-    if (nums.length !== 5 || extra.length !== 2) continue;
-    draws.push({ game: 'em', date: `${m[3]}-${String(MON[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`, nums, extra });
+  const x = await get('https://www.national-lottery.co.uk/results/euromillions/draw-history/csv', false);
+  for (const d of x.split('</draw-results>')[0].split('<game ').slice(1)) {
+    const date = (d.match(/<draw-date>(\d{4}-\d{2}-\d{2})<\/draw-date>/) || [])[1];
+    const nums = [...d.matchAll(/<ball number="\d">(\d+)<\/ball>/g)].map(m => +m[1]).sort((p, q) => p - q);
+    const extra = [...d.matchAll(/<bonus-ball type="luckystar" number="\d">(\d+)<\/bonus-ball>/g)].map(m => +m[1]).sort((p, q) => p - q);
+    if (date && nums.length === 5 && extra.length === 2 && !draws.some(o => o.game === 'em' && o.date === date)) draws.push({ game: 'em', date, nums, extra });
   }
-  draws.sort((a, b) => b.date.localeCompare(a.date));
-  out.draws = draws.slice(0, 30);
-  out.source += ' · EuroMillions : historique officiel (National Lottery, Royaume-Uni)';
-  console.log(`EuroMillions : ${draws.length} tirages lus, dernier le ${draws[0] && draws[0].date}`);
-  if (!draws.length) console.log(`EuroMillions : format inattendu, début : ${JSON.stringify(csv.slice(0, 1200))}`);
+  out.source += ' · EuroMillions : résultats officiels (National Lottery, Royaume-Uni)';
 } catch (e) { console.log(`EuroMillions : échec (${e.message})`); }
+out.draws = draws.sort((p, q) => q.date.localeCompare(p.date)).slice(0, 30);
+console.log(`EuroMillions : ${out.draws.length} tirages connus, dernier le ${out.draws[0] && out.draws[0].date}`);
 
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(out));
