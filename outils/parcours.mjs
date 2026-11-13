@@ -107,7 +107,7 @@ for (const f of features) {
   if (len < 1 || len > 40) { skipped++; continue; }
   const first = segs[0][0], lastSeg = segs[segs.length - 1], last = lastSeg[lastSeg.length - 1];
   const rt = pick(p, 'roundtrip', 'tags.roundtrip');
-  const loop = rt === 'yes' ? true : rt === 'no' ? false : segs.length === 1 && km(first, last) < 0.3;
+  const loop = rt === 'yes' ? true : rt === 'no' ? false : km(first, last) < 0.3;
   const id = pick(p, 'osm_id', 'id') || String(f.id || '');
   routes.push({
     id, n: pick(p, 'name', 'nom'), ref: pick(p, 'ref'), net: pick(p, 'network'), kind: pick(p, 'route'),
@@ -158,11 +158,11 @@ const todo = routes.filter(r => !cache[keyOf(r)]);
 console.log(`Dénivelé : ${routes.length - todo.length} déjà connus, ${todo.length} à calculer (au plus ${MAX_ALTI} cette nuit)`);
 let done = 0, fails = 0;
 const queue = todo.slice(0, MAX_ALTI);
-await Promise.all([...Array(4)].map(async () => {
+await Promise.all([...Array(6)].map(async () => {
   while (queue.length && Date.now() - T0 < BUDGET) {
     const r = queue.shift();
     try { const c = await climb(r); if (c) { cache[keyOf(r)] = c; done++; } } catch (e) { fails++; if (fails > 200) { queue.length = 0; console.log('Trop d\'échecs du service d\'altitude, on s\'arrête là pour cette nuit'); } }
-    await sleep(150);
+    await sleep(100);
   }
 }));
 console.log(`Dénivelé calculé pour ${done} parcours (${fails} échecs)`);
