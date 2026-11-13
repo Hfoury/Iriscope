@@ -1,10 +1,14 @@
-// Diagnostic manuel (0.41.0) : liens utiles des DOM-TOM et champs de VigiEau. N'écrit rien.
-const UA = 'Mozilla/5.0 (Linux; Android 14) liens-test/1.0';
-for (const u of ['https://www.info-requin.re', 'https://www.info-requin.re/', 'https://meteofrance.gp/fr/sargasses', 'https://meteofrance.mq/fr/sargasses', 'https://www.ipgp.fr/observatoire-volcanologique-du-piton-de-la-fournaise/', 'https://www.ipgp.fr/observatoires/ovpf/', 'https://meteofrance.re/fr/cyclone', 'https://meteofrance.com/meteo-des-forets', 'https://www.reunion.gouv.fr/Actions-de-l-Etat/Securite-et-protection-de-la-population/Risque-requin']) {
-  try { const r = await fetch(u, { headers: { 'User-Agent': UA }, redirect: 'follow' }); const t = await r.text(); console.log(`${r.status} ${u} -> ${r.url} · ${(t.match(/<title>([^<]*)/i) || [])[1] || ''}`); }
+// Diagnostic manuel (0.41.0) : où trouver les résultats officiels du Loto et d'EuroMillions avec les gains par rang. N'écrit rien.
+const UA = 'Mozilla/5.0 (Linux; Android 14) resultats-test/1.0';
+for (const u of ['https://www.fdj.fr/jeux-de-tirage/loto/historique', 'https://www.fdj.fr/jeux-de-tirage/euromillions-my-million/historique']) {
+  try {
+    const r = await fetch(u, { headers: { 'User-Agent': UA } }); const t = await r.text();
+    console.log(`\n== ${u} : HTTP ${r.status}`);
+    console.log([...new Set([...t.matchAll(/https?:[^"' ]*\.(?:zip|csv)/g)].map(m => m[0]))].slice(0, 12).join('\n'));
+  } catch (e) { console.log(`ERR ${u} ${e.message}`); }
+}
+for (const u of ['https://media.fdj.fr/static-draws/csv/loto/loto_201911.zip', 'https://media.fdj.fr/static-draws/csv/euromillions/euromillions_202002.zip']) {
+  try { const r = await fetch(u, { headers: { 'User-Agent': UA } }); const b = Buffer.from(await r.arrayBuffer()); console.log(`\n== ${u} : HTTP ${r.status} ${b.length} octets ${r.headers.get('last-modified')}`);
+    if (r.ok) { const fs = await import('node:fs'); fs.writeFileSync('/tmp/x.zip', b); const { execSync } = await import('node:child_process'); console.log(execSync('unzip -p /tmp/x.zip | head -3 | cut -c1-900').toString()); } }
   catch (e) { console.log(`ERR ${u} ${e.message}`); }
 }
-const z = await (await fetch('https://api.vigieau.gouv.fr/api/zones?lon=-2.92&lat=47.62&commune=56008&profil=particulier')).json();
-console.log(JSON.stringify(z.map(x => { const { usages, ...rest } = x; return { ...rest, usages: usages.length }; })).slice(0, 1500));
-const g = await (await fetch('https://geo.api.gouv.fr/communes?lat=47.62&lon=-2.92&fields=code&format=json')).json();
-console.log('geo.api', JSON.stringify(g));
