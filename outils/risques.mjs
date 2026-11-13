@@ -3,8 +3,9 @@
 // - Vigicrues (Licence Ouverte) : tronçons de rivière de métropole en vigilance jaune, orange ou rouge, avec un tracé allégé ;
 // - Météo des forêts de Météo-France (Licence Ouverte, données ouvertes, l'été) : niveau de danger d'incendie par département, aujourd'hui et demain ;
 // - cyclones : centre national des ouragans américain (NHC, domaine public) pour les Antilles et la Guyane,
-//   et GDACS (Commission européenne) pour l'océan Indien (La Réunion, Mayotte) et le Pacifique.
-// Résultat : <dossier>/risques/index.json { updated, crues: [...], forets: { date, deps: { '56': [j1, j2] } }, cyclones: [...] }
+//   et GDACS (Commission européenne) pour l'océan Indien (La Réunion, Mayotte) et le Pacifique ;
+// - éruptions volcaniques en cours (GDACS).
+// Résultat : <dossier>/risques/index.json { updated, crues: [...], forets: { date, deps: { '56': [j1, j2] } }, cyclones: [...], volcans: [...] }
 // Une source en panne garde ses données de l'heure précédente.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -87,8 +88,23 @@ async function cyclones() {
   return out;
 }
 
+// ---------- éruptions volcaniques (GDACS) ----------
+async function volcans() {
+  const j = await get('https://www.gdacs.org/gdacsapi/api/events/geteventlist/SEARCH?eventlist=VO');
+  const out = [];
+  for (const f of j.features || []) {
+    const p = f.properties || {};
+    if (p.iscurrent === 'false' || p.iscurrent === false) continue;
+    const c = f.geometry && f.geometry.coordinates;
+    if (!c) continue;
+    out.push({ id: `vo-${p.eventid}`, name: p.eventname || p.name || '', level: p.alertlevel || '', country: p.country || '', lat: c[1], lon: c[0], from: p.fromdate || null, url: (p.url && p.url.report) || 'https://www.gdacs.org' });
+  }
+  console.log(`Éruptions en cours : ${out.length}`);
+  return out;
+}
+
 const res = { updated: new Date().toISOString(), source: 'Vigicrues, Météo-France (Licence Ouverte), NHC (domaine public), GDACS' };
-for (const [k, f] of [['crues', crues], ['forets', forets], ['cyclones', cyclones]]) {
+for (const [k, f] of [['crues', crues], ['forets', forets], ['cyclones', cyclones], ['volcans', volcans]]) {
   try { res[k] = await f(); }
   catch (e) { console.log(`${k} : échec (${e.message}), données précédentes gardées`); res[k] = before[k] || (k === 'forets' ? { date: null, deps: {} } : []); }
 }
