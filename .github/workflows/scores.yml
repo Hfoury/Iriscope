@@ -1,0 +1,36 @@
+name: Scores de foot (prono entre amis)
+
+# Chaque soir à 23 h 30 (Paris) : calendrier des championnats (openfootball, domaine public) et scores de la Ligue 1
+# (Wikipédia, CC BY-SA), publiés sur la branche « scores » lue par l'appli pour le prono entre amis. Gratuit, sans clé.
+on:
+  schedule:
+    - cron: '30 22 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: scores
+  cancel-in-progress: false
+
+jobs:
+  scores:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Calcul
+        run: node outils/scores.mjs sortie
+      - name: Publication sur la branche scores
+        run: |
+          cd sortie
+          git init -q -b scores
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Scores du $(date -u +%F\ %H:%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" scores
