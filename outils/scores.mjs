@@ -139,7 +139,7 @@ try {
   out.draws = draws.slice(0, 30);
   out.source += ' · EuroMillions : historique officiel (National Lottery, Royaume-Uni)';
   console.log(`EuroMillions : ${draws.length} tirages lus, dernier le ${draws[0] && draws[0].date}`);
-  if (!draws.length) console.log(`EuroMillions : format inattendu, début : ${JSON.stringify(csv.slice(0, 200))}`);
+  if (!draws.length) console.log(`EuroMillions : format inattendu, début : ${JSON.stringify(csv.slice(0, 1200))}`);
 } catch (e) { console.log(`EuroMillions : échec (${e.message})`); }
 
 fs.mkdirSync(OUT, { recursive: true });
