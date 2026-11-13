@@ -1,0 +1,41 @@
+name: Parcours (randonnée et marche)
+
+# Chaque nuit : lit les itinéraires de randonnée d'OpenStreetMap (extrait national magOSM, ODbL), calcule distance, dénivelé (IGN),
+# niveau et durées, et publie des tuiles sur la branche « parcours » (lue par l'appli, rubrique Aération). Gratuit, sans clé.
+# Le dénivelé est gardé d'une nuit sur l'autre : seuls les nouveaux parcours sont recalculés.
+on:
+  schedule:
+    - cron: '10 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parcours
+  cancel-in-progress: true
+
+jobs:
+  parcours:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Dénivelés déjà connus
+        run: |
+          if git fetch -q --depth=1 origin parcours 2>/dev/null; then git show FETCH_HEAD:parcours/cache-alti.json > cache.json || echo '{}' > cache.json; else echo '{}' > cache.json; fi
+          echo "Cache : $(wc -c < cache.json) octets"
+      - name: Calcul des parcours
+        run: node --max-old-space-size=6144 outils/parcours.mjs sortie --cache cache.json --minutes 45 --max-alti 20000
+      - name: Publication sur la branche parcours
+        run: |
+          cd sortie
+          git init -q -b parcours
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Parcours du $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" parcours
