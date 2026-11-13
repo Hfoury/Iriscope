@@ -4,7 +4,7 @@
 // Résultat dans <sortie>/trains/ :
 //   gares.json            [{ id (code UIC), n (nom), lat, lon }]
 //   gares/<uic>.json      { start (AAAAMMJJ), days, items: [{ num, k (TER, TGV…), t (heure de passage), d (jours de circulation
-//                           sur 'days' jours à partir de start, chaîne de 0/1), s: [[uic, heure], …] (arrêts suivants), tid: [trip_id…] }] }
+//                           sur days jours à partir de start, chaîne de 0/1), s: [[uic, heure], …] (arrêts suivants) }] }
 // Usage : node outils/trains.mjs <dossier GTFS décompressé> <sortie> [--jours 45]
 import fs from 'node:fs';
 import path from 'node:path';
@@ -104,7 +104,7 @@ for (const p of Object.values(patterns)) {
   const d = Array.from(p.days).join('').replace(/0+$/, '');
   p.stops.forEach((s, i) => {
     if (i === p.stops.length - 1) return; // terminus : on n'y monte pas
-    (byStation[s[1]] ||= []).push({ num: p.num, k: p.k, t: s[2], d, s: p.stops.slice(i + 1).map(x => [x[1], x[3]]), tid: p.tid });
+    (byStation[s[1]] ||= []).push({ num: p.num, k: p.k, t: s[2], d, s: p.stops.slice(i + 1).map(x => [x[1], x[3]]) });
   });
 }
 let max = 0, maxG = '', total = 0;
@@ -119,4 +119,4 @@ fs.writeFileSync(path.join(OUT, 'gares.json'), JSON.stringify(list));
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify({ updated: new Date().toISOString(), gares: list.length, trains: Object.keys(patterns).length }));
 console.log(`${list.length} gares desservies, ${Object.keys(patterns).length} trains distincts ; ${Math.round(total / 1e6)} Mo en tout, la plus lourde ${Math.round(max / 1024)} Ko (${(gares[maxG] || {}).n || maxG})`);
 const ex = (byStation['87393009'] || byStation[Object.keys(byStation)[0]] || []).slice(0, 3);
-for (const e of ex) console.log(`  ex. ${e.k} ${e.num} à ${e.t} → ${e.s.slice(-1)[0].join(' ')} · ${e.tid[0]}`);
+for (const e of ex) console.log(`  ex. ${e.k} ${e.num} à ${e.t} → ${e.s.slice(-1)[0].join(' ')}`);
