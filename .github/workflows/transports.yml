@@ -7,6 +7,11 @@ on:
   schedule:
     - cron: '30 3 * * 1'
   workflow_dispatch:
+    inputs:
+      ville:
+        description: 'Une seule ville (ex. rennes), vide pour toutes'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -32,7 +37,7 @@ jobs:
           fi
           ls sortie/transports 2>/dev/null | wc -l
       - name: Calcul des lignes
-        run: node --max-old-space-size=6144 outils/transports.mjs sortie
+        run: node --max-old-space-size=6144 outils/transports.mjs sortie ${{ github.event.inputs.ville && format('--ville {0}', github.event.inputs.ville) || '' }}
       - name: Publication sur la branche transports
         run: |
           cd sortie

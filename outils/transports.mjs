@@ -57,7 +57,7 @@ async function overpass(q) {
       const res = await fetch(base, { method: 'POST', headers: { 'User-Agent': UA, 'Content-Type': 'application/x-www-form-urlencoded' }, body: `data=${encodeURIComponent(q)}` });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const j = await res.json();
-      if (j.remark && /error|timed out/i.test(j.remark) && !(j.elements || []).length) throw new Error(j.remark);
+      if (j.remark && /error|timed out|out of memory|rate/i.test(j.remark)) throw new Error(j.remark.slice(0, 120));
       return j.elements || [];
     } catch (e) { last = e; console.log(`  ${base} : ${e.message}, nouvel essai`); await sleep(15000 * (k + 1)); }
   }
@@ -83,20 +83,25 @@ const DEFAULT_COLOR = { metro: '#1C7ED6', tram: '#2B9A66', rer: '#7048E8', funic
 
 async function city([slug, name, lat, lon, R, plan]) {
   const m = R * 1000;
-  const routes = await overpass(`[out:json][timeout:300];(
-relation["type"="route"]["route"~"^(subway|tram|light_rail|monorail|funicular)$"](around:${m},${lat},${lon});
-relation["type"="route"]["route"="train"]["network"~"RER|Léman Express",i](around:${m},${lat},${lon});
-relation["type"="route"]["route"="aerialway"](around:${m},${lat},${lon});
-);out tags geom;`);
-  await sleep(5000);
+  // cadre (sud, ouest, nord, est) plutôt qu'un rayon : bien plus léger pour les serveurs sur des relations
+  const dLat = R / 111, dLon = R / (111 * Math.cos(lat * Math.PI / 180));
+  const bb = `${(lat - dLat).toFixed(4)},${(lon - dLon).toFixed(4)},${(lat + dLat).toFixed(4)},${(lon + dLon).toFixed(4)}`;
+  const routes = [];
+  // une requête par famille de lignes : chacune reste petite et passe même quand les serveurs sont chargés
+  for (const f of ['["route"="subway"]', '["route"~"^(tram|light_rail)$"]', '["route"~"^(monorail|funicular|aerialway)$"]', '["route"="train"]["network"~"RER|Leman|Léman",i]']) {
+    const els = await overpass(`[out:json][timeout:180][bbox:${bb}];relation["type"="route"]${f};out tags geom;`);
+    routes.push(...els.filter(e => e.type === 'relation'));
+    await sleep(4000);
+  }
   // téléphériques urbains sans relation : les câbles eux-mêmes, près du centre seulement (pas les remontées des stations de ski)
   const cables = await overpass(`[out:json][timeout:120];way["aerialway"~"^(gondola|cable_car)$"]["name"](around:${Math.min(m, 8000)},${lat},${lon});out tags geom;`);
-  await sleep(5000);
-  const stopsEl = await overpass(`[out:json][timeout:180];(
-node["railway"~"^(station|halt|tram_stop)$"]["name"](around:${m},${lat},${lon});
-node["public_transport"="station"]["name"](around:${m},${lat},${lon});
-node["aerialway"="station"]["name"](around:${Math.min(m, 8000)},${lat},${lon});
+  await sleep(4000);
+  const stopsEl = await overpass(`[out:json][timeout:180][bbox:${bb}];(
+node["railway"~"^(station|halt|tram_stop)$"]["name"];
+node["public_transport"="station"]["name"];
+node["aerialway"="station"]["name"];
 );out tags;`);
+  console.log(`  ${routes.length} relations, ${cables.length} câbles, ${stopsEl.length} arrêts lus`);
 
   const lines = new Map();
   const stopPts = []; // [lat, lon, lineId] des arrêts déclarés dans les lignes
@@ -127,10 +132,14 @@ node["aerialway"="station"]["name"](around:${Math.min(m, 8000)},${lat},${lon});
   const keep = new Set(outLines.map(l => l.id));
 
   // Stations : un nœud nommé à moins de 150 m d'un arrêt d'une ligne ; les quais d'un même nom fusionnés (300 m)
+  const grid = new Map();
+  for (const p of stopPts) { const k = `${Math.floor(p[0] / 0.002)}:${Math.floor(p[1] / 0.003)}`; if (!grid.has(k)) grid.set(k, []); grid.get(k).push(p); }
   const stations = [];
   for (const s of stopsEl) {
     const n = (s.tags && s.tags.name || '').trim(); if (!n) continue;
-    const l = [...new Set(stopPts.filter(p => keep.has(p[2]) && km(s.lat, s.lon, p[0], p[1]) < 0.15).map(p => p[2]))];
+    const near = [];
+    for (let a = -1; a <= 1; a++) for (let o = -1; o <= 1; o++) near.push(...(grid.get(`${Math.floor(s.lat / 0.002) + a}:${Math.floor(s.lon / 0.003) + o}`) || []));
+    const l = [...new Set(near.filter(p => keep.has(p[2]) && km(s.lat, s.lon, p[0], p[1]) < 0.15).map(p => p[2]))];
     if (!l.length) continue;
     const same = stations.find(x => x.n === n && km(x.lat, x.lon, s.lat, s.lon) < 0.3);
     if (same) { same.l = [...new Set([...same.l, ...l])]; continue; }
@@ -151,7 +160,7 @@ const index = { updated: new Date().toISOString(), source: '© contributeurs Ope
 let failed = 0;
 if (only) index.cities = before.cities.filter(x => x.slug !== only);
 for (const c of CITIES.filter(c => !only || c[0] === only)) {
-  try { const r = await city(c); if (r.lines) index.cities.push(r); }
+  try { const r = await city(c); if (!r.lines) throw new Error('aucune ligne lue'); index.cities.push(r); }
   catch (e) {
     failed++; console.log(`${c[1]} : échec (${e.message})`);
     const old = before.cities.find(x => x.slug === c[0]);
