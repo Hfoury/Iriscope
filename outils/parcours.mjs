@@ -3,17 +3,21 @@
 // publié par magOSM (Magellium) sur data.gouv.fr. Licence ODbL : citer « © les contributeurs d'OpenStreetMap » ; la base dérivée
 // publiée ici reste sous ODbL. Dénivelé : service d'altimétrie de l'IGN (Géoplateforme, gratuit, Licence Ouverte).
 // Résultat : <dossier>/parcours/<lat*2>_<lon*2>.json (tuiles d'un demi-degré, selon le point de départ) + index.json + cache-alti.json
-// Usage : node outils/parcours.mjs sortie [--fichier extrait.geojson] [--cache ancien-cache.json] [--max-alti 6000]
+// Usage : node outils/parcours.mjs sortie [--couche rando|velo] [--fichier extrait.geojson] [--cache ancien-cache.json] [--max-alti 6000]
+// --couche velo (0.34.0) : itinéraires cyclables (route=bicycle et route=mtb, extrait magOSM « Itinéraires cyclables »), publiés dans
+// <dossier>/velo/ ; les grands itinéraires (véloroutes, EuroVelo) sont découpés en tronçons d'environ 40 km.
 import fs from 'node:fs';
 import path from 'node:path';
 
 const args = process.argv.slice(2);
 const opt = k => { const i = args.indexOf(k); return i >= 0 ? args[i + 1] : null; };
-const OUT = path.join(args[0] && !args[0].startsWith('--') ? args[0] : 'sortie', 'parcours');
+const VELO = opt('--couche') === 'velo';
+const OUT = path.join(args[0] && !args[0].startsWith('--') ? args[0] : 'sortie', VELO ? 'velo' : 'parcours');
+const MIN_KM = VELO ? 5 : 1, MAX_KM = VELO ? 120 : 40, STAGE_KM = 40;
 const MAX_ALTI = Number(opt('--max-alti') || 6000);
 const T0 = Date.now(), BUDGET = Number(opt('--minutes') || 45) * 60000;
 const WFS = 'https://magosm.magellium.com/geoserver/wfs?request=GetFeature&version=2.0.0&outputFormat=application/json'
-  + '&typeName=magosm:hiking_foot_routes_line&srsName=EPSG:4326';
+  + `&typeName=magosm:${VELO ? 'bicycle_mtb_routes_line' : 'hiking_foot_routes_line'}&srsName=EPSG:4326`;
 const ALTI = 'https://data.geopf.fr/altimetrie/1.0/calcul/alti/rest/elevation.json';
 const UA = { 'User-Agent': 'iriscope-parcours/1.0' };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -97,26 +101,49 @@ function chain(parts) {
 }
 const pick = (p, ...ks) => { for (const k of ks) if (p[k] != null && clean(p[k])) return clean(p[k]); return ''; };
 const routes = [];
-let skipped = 0;
+let skipped = 0, staged = 0;
+const segLen = seg => seg.slice(1).reduce((t, c, i) => t + km(seg[i], c), 0);
+// Découpe un grand itinéraire en tronçons d'environ STAGE_KM (on coupe seulement à l'intérieur d'un morceau continu)
+function stages(segs) {
+  const out = []; let cur = [], curLen = 0;
+  for (const seg of segs) {
+    let piece = [seg[0]];
+    for (let i = 1; i < seg.length; i++) {
+      const d = km(seg[i - 1], seg[i]); piece.push(seg[i]); curLen += d;
+      if (curLen >= STAGE_KM) { cur.push(piece); out.push(cur); cur = []; curLen = 0; piece = [seg[i]]; }
+    }
+    if (piece.length > 1) cur.push(piece);
+  }
+  if (cur.length) { if (curLen < STAGE_KM / 3 && out.length) out[out.length - 1].push(...cur); else out.push(cur); }
+  return out;
+}
 for (const f of features) {
   const p = f.properties || {};
   const segs = chain(lines(f.geometry));
   if (!segs.length) { skipped++; continue; }
-  const len = segs.reduce((s, seg) => s + seg.slice(1).reduce((t, c, i) => t + km(seg[i], c), 0), 0);
-  // promenades de 1 à 40 km : au-delà, ce sont des itinérances de plusieurs jours (GR complets), pas une sortie d'aération
-  if (len < 1 || len > 40) { skipped++; continue; }
-  const first = segs[0][0], lastSeg = segs[segs.length - 1], last = lastSeg[lastSeg.length - 1];
+  const len = segs.reduce((s, seg) => s + segLen(seg), 0);
+  // à pied, 1 à 40 km : au-delà, ce sont des itinérances de plusieurs jours (GR complets), pas une sortie d'aération
+  // à vélo, 5 à 120 km ; au-delà, découpé en tronçons d'une quarantaine de kilomètres
+  if (len < MIN_KM || (len > MAX_KM && !VELO)) { skipped++; continue; }
+  const parts = len > MAX_KM ? stages(segs) : [segs];
+  if (parts.length > 1) staged++;
   const rt = pick(p, 'roundtrip', 'tags.roundtrip');
-  const loop = rt === 'yes' ? true : rt === 'no' ? false : km(first, last) < 0.3;
-  const id = pick(p, 'osm_id', 'id') || String(f.id || '');
-  routes.push({
-    id, n: pick(p, 'name', 'nom'), ref: pick(p, 'ref'), net: pick(p, 'network'), kind: pick(p, 'route'),
-    op: pick(p, 'operator'), web: pick(p, 'website', 'url'), desc: pick(p, 'description').slice(0, 200),
-    sac: pick(p, 'sac_scale'), km: Math.round(len * 10) / 10, loop,
-    lat: r4(first[1]), lon: r4(first[0]), segs: segs.map(s => simplify(s)),
+  const id0 = pick(p, 'osm_id', 'id') || String(f.id || '');
+  parts.forEach((sg, k) => {
+    const L = sg.reduce((s, seg) => s + segLen(seg), 0);
+    if (L < MIN_KM / 2) return;
+    const first = sg[0][0], lastSeg = sg[sg.length - 1], last = lastSeg[lastSeg.length - 1];
+    const loop = parts.length > 1 ? false : rt === 'yes' ? true : rt === 'no' ? false : km(first, last) < 0.3;
+    routes.push({
+      id: parts.length > 1 ? `${id0}-${k + 1}` : id0, n: pick(p, 'name', 'nom'), stage: parts.length > 1 ? `${k + 1}/${parts.length}` : '',
+      ref: pick(p, 'ref'), net: pick(p, 'network'), kind: pick(p, 'route'),
+      op: pick(p, 'operator'), web: pick(p, 'website', 'url'), desc: pick(p, 'description').slice(0, 200),
+      sac: pick(p, 'sac_scale'), mtb: pick(p, 'mtb:scale', 'mtb_scale'), km: Math.round(L * 10) / 10, loop,
+      lat: r4(first[1]), lon: r4(first[0]), segs: sg.map(s => simplify(s)),
+    });
   });
 }
-console.log(`${routes.length} parcours de 1 à 40 km gardés, ${skipped} écartés`);
+console.log(`${routes.length} parcours gardés (${MIN_KM} à ${MAX_KM} km${VELO ? `, dont ${staged} grands itinéraires découpés en tronçons` : ''}), ${skipped} écartés`);
 
 /* ---------- 3. dénivelé positif (IGN), mis en cache d'une nuit sur l'autre ---------- */
 let cache = {};
@@ -173,14 +200,22 @@ for (const k of Object.keys(cache)) if (!alive.has(k)) delete cache[k];
 // effort = km + dénivelé/100 (règle des randonneurs : 100 m de montée ≈ 1 km de plat)
 // durée à pied : 4 km/h + 1 h par 300 m de montée ; marche rapide : 6 km/h + 1 h par 450 m
 const r5min = h => Math.max(5, Math.round(h * 60 / 5) * 5);
+// à vélo : vélo 16 km/h + 1 h par 500 m de montée, vélo électrique 20 km/h + 1 h par 1 000 m ; VTT 10 km/h + 1 h par 400 m (électrique 13 km/h + 1 h par 800 m)
+// effort vélo = km/3 + dénivelé/150 (VTT : km/2 + dénivelé/100)
 function finish(r) {
   const c = cache[keyOf(r)];
   const up = c ? c.up : null;
-  const eff = r.km + (up || 0) / 100;
-  let lvl = eff < 8 ? 1 : eff < 15 ? 2 : eff < 25 ? 3 : 4;
+  const mtb = VELO && r.kind === 'mtb';
+  const eff = !VELO ? r.km + (up || 0) / 100 : mtb ? r.km / 2 + (up || 0) / 100 : r.km / 3 + (up || 0) / 150;
+  let lvl = !VELO ? (eff < 8 ? 1 : eff < 15 ? 2 : eff < 25 ? 3 : 4) : (eff < 10 ? 1 : eff < 20 ? 2 : eff < 35 ? 3 : 4);
   if (/demanding|alpine/.test(r.sac)) lvl = Math.max(lvl, 4); else if (/mountain_hiking/.test(r.sac)) lvl = Math.max(lvl, 3);
-  const o = { id: r.id, n: r.n || (r.ref ? `Itinéraire ${r.ref}` : 'Itinéraire de randonnée'), km: r.km, lvl, loop: r.loop ? 1 : 0, lat: r.lat, lon: r.lon,
-    t: r5min(r.km / 4 + (up || 0) / 300), tf: r5min(r.km / 6 + (up || 0) / 450) };
+  if (mtb && /^[3-6]/.test(r.mtb)) lvl = Math.max(lvl, 4); else if (mtb && /^2/.test(r.mtb)) lvl = Math.max(lvl, 3);
+  const def = VELO ? (mtb ? 'Circuit VTT' : 'Itinéraire cyclable') : 'Itinéraire de randonnée';
+  const o = { id: r.id, n: (r.n || (r.ref ? `Itinéraire ${r.ref}` : def)) + (r.stage ? ` (tronçon ${r.stage})` : ''), km: r.km, lvl, loop: r.loop ? 1 : 0, lat: r.lat, lon: r.lon,
+    t: r5min(!VELO ? r.km / 4 + (up || 0) / 300 : mtb ? r.km / 10 + (up || 0) / 400 : r.km / 16 + (up || 0) / 500),
+    tf: r5min(!VELO ? r.km / 6 + (up || 0) / 450 : mtb ? r.km / 13 + (up || 0) / 800 : r.km / 20 + (up || 0) / 1000) };
+  if (mtb) o.v = 'm';
+  if (r.stage) o.st = 1;
   if (up != null) { o.up = up; o.zmax = c.hi; }
   if (r.ref) o.ref = r.ref.slice(0, 30);
   if (r.net) o.net = r.net;
@@ -212,4 +247,4 @@ fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(index));
 console.log(`${items.length} parcours, ${Object.keys(by).length} tuiles, la plus lourde ${Math.round(max / 1024)} Ko (${maxT})`);
 console.log(`Niveaux : facile ${lv[0]}, moyen ${lv[1]}, difficile ${lv[2]}, sportif ${lv[3]} · avec dénivelé : ${index.withClimb}`);
 const ex = items.filter(i => i.up != null).slice(0, 5);
-for (const e of ex) console.log(`  ex. ${e.n} · ${e.km} km · D+ ${e.up} m · niveau ${e.lvl} · ${e.t} min à pied · ${e.loop ? 'boucle' : 'aller simple'}`);
+for (const e of ex) console.log(`  ex. ${e.n} · ${e.km} km · D+ ${e.up} m · niveau ${e.lvl} · ${e.t} min${VELO ? (e.v ? ' en VTT' : ' à vélo') : ' à pied'} · ${e.loop ? 'boucle' : 'aller simple'}`);
