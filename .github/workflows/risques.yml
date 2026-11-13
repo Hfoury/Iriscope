@@ -1,0 +1,39 @@
+name: Alertes et risques (crues, feux de forêt, cyclones)
+
+# Toutes les heures : vigilance crues (Vigicrues), danger d'incendie par département (Météo des forêts, Météo-France)
+# et cyclones en cours (NHC, GDACS), publiés sur la branche « risques » lue par l'appli. Gratuit, sans clé.
+on:
+  schedule:
+    - cron: '23 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: risques
+  cancel-in-progress: false
+
+jobs:
+  risques:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Données de l'heure précédente
+        run: |
+          if git fetch -q --depth=1 origin risques 2>/dev/null; then git show FETCH_HEAD:risques/index.json > ancien.json || echo '{}' > ancien.json; else echo '{}' > ancien.json; fi
+      - name: Calcul
+        run: node outils/risques.mjs sortie --ancien ancien.json
+      - name: Publication sur la branche risques
+        run: |
+          cd sortie
+          git init -q -b risques
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Risques du $(date -u +%F\ %H:%M)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" risques
