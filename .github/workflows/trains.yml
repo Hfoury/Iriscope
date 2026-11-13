@@ -1,0 +1,47 @@
+name: Trains (horaires et perturbations SNCF)
+
+# Chaque nuit : télécharge les horaires théoriques SNCF (TER, Intercités, TGV ; « Horaires SNCF » sur data.gouv.fr, licence ODbL,
+# gratuit et sans clé), les allège gare par gare et publie le résultat sur la branche « trains » (lue par l'appli, rubrique Mes trains).
+# Ajoute un relevé des retards, suppressions et alertes en cours (direct.json).
+on:
+  schedule:
+    - cron: '40 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: trains
+  cancel-in-progress: true
+
+jobs:
+  trains:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Téléchargement des horaires SNCF
+        run: |
+          curl -sSL --retry 4 -A "iriscope-trains/1.0" -o gtfs.zip https://eu.ftp.opendatasoft.com/sncf/plandata/Export_OpenData_SNCF_GTFS_NewTripId.zip
+          ls -la gtfs.zip
+          mkdir -p gtfs && unzip -q -o gtfs.zip -d gtfs && ls -la gtfs
+          for f in gtfs/*.txt; do echo "== $f"; head -3 "$f"; done
+      - name: Allègement gare par gare
+        run: node --max-old-space-size=6144 outils/trains.mjs gtfs sortie --jours 45
+      - name: Perturbations en cours
+        continue-on-error: true
+        run: node outils/trains-direct.mjs sortie
+      - name: Publication sur la branche trains
+        run: |
+          du -sh sortie/trains
+          cd sortie
+          git init -q -b trains
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Trains du $(date -u +%F)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" trains
