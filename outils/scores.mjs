@@ -1,4 +1,4 @@
-// Calendrier et scores de foot pour le « Prono entre amis » (0.41.0), chaque soir, publiés sur la branche « scores ».
+// Calendrier et scores de foot et de rugby (Top 14) pour le « Prono entre amis » (0.41.0), chaque soir, publiés sur la branche « scores ».
 // - calendrier : openfootball (domaine public), Ligue 1, Premier League, Liga, Bundesliga, Serie A ;
 // - scores : Wikipédia (CC BY-SA, source citée) pour la Ligue 1, mis à jour quelques heures après les matchs ;
 //   à défaut, les scores d'openfootball (souvent en retard).
@@ -74,6 +74,49 @@ for (const [k, name, tz, wiki] of LEAGUES) {
     console.log(`${name} : ${matches.length} matchs gardés, ${matches.filter(m => m.score).length} avec score`);
   } catch (e) { console.log(`${name} : échec (${e.message})`); }
 }
+// ---------- rugby : Top 14 (Wikipédia, CC BY-SA), une ligne par match dans « Détails des résultats » ----------
+const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+export function top14(text) {
+  const clean = c => c.replace(/'''/g, '').replace(/\{\{bonus\|[^}]*\}\}/g, '').replace(/\[\[(?:[^\]|]+\|)?([^\]]+)\]\]/g, '$1').trim();
+  const out = [];
+  let round = '', date = null;
+  for (const line of text.split('\n')) {
+    const r = line.match(/^;;\s*\{\{(\d+)(?:re|e)\|journée\}\}/);
+    if (r) { round = `Journée ${r[1]}`; date = null; continue; }
+    const p = line.match(/^\{\{Petit\|([^}]+)\}\}/);
+    if (p && round) {
+      const t = p[1].toLowerCase();
+      const d = t.match(/(\d{1,2})(?:er)?/); const mo = MOIS.findIndex(m => t.includes(m)); const yy = t.match(/(20\d\d)/);
+      if (d && mo >= 0 && yy) {
+        // l'année écrite est celle du dernier jour : un week-end « 31 décembre et 1er janvier » commence l'année d'avant
+        const firstMo = MOIS.map((m, i) => [i, t.indexOf(m)]).filter(x => x[1] >= 0).sort((a, b) => a[1] - b[1])[0][0];
+        const lastMo = MOIS.map((m, i) => [i, t.lastIndexOf(m)]).filter(x => x[1] >= 0).sort((a, b) => b[1] - a[1])[0][0];
+        const year = +yy[1] - (firstMo > lastMo ? 1 : 0);
+        date = `${year}-${String(firstMo + 1).padStart(2, '0')}-${String(+d[1]).padStart(2, '0')}`;
+      }
+      continue;
+    }
+    if (!round || !date || !line.startsWith('|') || line.startsWith('|-') || line.startsWith('|}') || line.startsWith('|+')) continue;
+    const c = line.slice(1).split('||');
+    if (c.length < 5) continue;
+    const home = clean(c[1]), away = clean(c[4]);
+    if (!home || !away || /width|colspan/.test(home)) continue;
+    const sh = clean(c[2]), sa = clean(c[3]);
+    const score = /^\d+$/.test(sh) && /^\d+$/.test(sa) ? [+sh, +sa] : null;
+    out.push({ id: `top14-${date}-${norm(home).replace(/ /g, '')}-${norm(away).replace(/ /g, '')}`, date, time: null, home, away, score, round });
+  }
+  return out;
+}
+try {
+  const raw = await get(`https://fr.wikipedia.org/w/index.php?title=${encodeURIComponent(`Championnat_de_France_de_rugby_à_XV_${y}-${y + 1}`)}&action=raw`, false);
+  const lo = new Date(now.getTime() - 15 * 86400000).toISOString().slice(0, 10), hi = new Date(now.getTime() + 30 * 86400000).toISOString().slice(0, 10);
+  const all = top14(raw);
+  const matches = all.filter(m => m.date >= lo && m.date <= hi);
+  out.leagues.push({ k: 'top14', name: 'Top 14', tz: 'Europe/Paris', sport: 'rugby', matches });
+  out.source += ' · Top 14 : Wikipédia (CC BY-SA)';
+  console.log(`Top 14 : ${all.length} matchs lus, ${matches.length} gardés, ${matches.filter(m => m.score).length} avec score`);
+} catch (e) { console.log(`Top 14 : échec (${e.message})`); }
+
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(out));
 console.log(`Terminé : ${out.leagues.length} championnats`);
