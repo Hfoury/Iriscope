@@ -117,6 +117,30 @@ try {
   console.log(`Top 14 : ${all.length} matchs lus, ${matches.length} gardés, ${matches.filter(m => m.score).length} avec score`);
 } catch (e) { console.log(`Top 14 : échec (${e.message})`); }
 
+// ---------- EuroMillions : historique officiel publié en CSV par la loterie nationale britannique (mêmes numéros dans tous les pays) ----------
+// Le Loto français n'a pas de source ouverte : ses numéros restent à taper par un membre du groupe.
+try {
+  const csv = await get('https://www.national-lottery.co.uk/results/euromillions/draw-history/csv', false);
+  const [head, ...rows] = csv.trim().split(/\r?\n/);
+  const cols = head.split(',').map(c => c.trim().toLowerCase());
+  const at = re => cols.findIndex(c => re.test(c));
+  const iDate = at(/date/), iBalls = cols.map((c, i) => (/^ball/.test(c) ? i : -1)).filter(i => i >= 0), iStars = cols.map((c, i) => (/star/.test(c) ? i : -1)).filter(i => i >= 0);
+  const MON = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const draws = [];
+  for (const r of rows) {
+    const c = r.split(',').map(x => x.trim());
+    const m = (c[iDate] || '').match(/(\d{1,2})[-\s/]([A-Za-z]{3})[a-z]*[-\s/](\d{4})/);
+    if (!m || !MON[m[2].toLowerCase()]) continue;
+    const nums = iBalls.map(i => +c[i]).filter(Boolean).sort((a, b) => a - b), extra = iStars.map(i => +c[i]).filter(Boolean).sort((a, b) => a - b);
+    if (nums.length !== 5 || extra.length !== 2) continue;
+    draws.push({ game: 'em', date: `${m[3]}-${String(MON[m[2].toLowerCase()]).padStart(2, '0')}-${m[1].padStart(2, '0')}`, nums, extra });
+  }
+  draws.sort((a, b) => b.date.localeCompare(a.date));
+  out.draws = draws.slice(0, 30);
+  out.source += ' · EuroMillions : historique officiel (National Lottery, Royaume-Uni)';
+  console.log(`EuroMillions : ${draws.length} tirages lus, dernier le ${draws[0] && draws[0].date}`);
+} catch (e) { console.log(`EuroMillions : échec (${e.message})`); }
+
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'index.json'), JSON.stringify(out));
 console.log(`Terminé : ${out.leagues.length} championnats`);
