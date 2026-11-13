@@ -1,7 +1,7 @@
 name: Transports urbains (métro, RER, tram, téléphérique)
 
-# Chaque semaine : lit dans OpenStreetMap (ODbL) les lignes de métro, RER, tramway, funiculaire et téléphérique urbain
-# des villes françaises qui en ont, et les publie sur la branche « transports » (lue par l'appli, bouton Transports de la carte).
+# Chaque semaine : lit dans les fichiers officiels des réseaux (GTFS, transport.data.gouv.fr, Licence Ouverte ou ODbL)
+# les lignes de métro, RER, tramway, funiculaire et téléphérique urbain des villes françaises qui en ont, et les publie sur la branche « transports » (lue par l'appli, bouton Transports de la carte).
 # Gratuit, sans clé. Une ville en échec garde ses données de la semaine précédente.
 on:
   schedule:
@@ -37,7 +37,7 @@ jobs:
           fi
           ls sortie/transports 2>/dev/null | wc -l
       - name: Calcul des lignes
-        run: node --max-old-space-size=6144 outils/transports.mjs sortie ${{ github.event.inputs.ville && format('--ville {0}', github.event.inputs.ville) || '' }}
+        run: node --max-old-space-size=6144 outils/transports-gtfs.mjs sortie ${{ github.event.inputs.ville && format('--ville {0}', github.event.inputs.ville) || '' }}
       - name: Publication sur la branche transports
         run: |
           cd sortie
