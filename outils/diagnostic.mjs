@@ -1,14 +1,12 @@
-// Diagnostic manuel (0.41.0) : adresse utilisée par la page historique de la FDJ pour télécharger les derniers tirages. N'écrit rien.
-const UA = 'Mozilla/5.0 (Linux; Android 14) resultats-test/1.0';
-const page = 'https://www.fdj.fr/jeux-de-tirage/loto/historique';
-const t = (await (await fetch(page, { headers: { 'User-Agent': UA } })).text()).replace(/\\u002F/gi, '/');
-const hits = new Set();
-for (const m of t.matchAll(/["'](\/?[a-z0-9_\-/.:]*(?:draw|tirage|archive|csv|zip|download)[a-z0-9_\-/.?=&:]*)["']/gi)) if (m[1].length < 160) hits.add(m[1]);
-console.log([...hits].slice(0, 60).join('\n'));
-const scripts = [...t.matchAll(/src="([^"]+\.js)"/g)].map(m => new URL(m[1], page).href);
-console.log('scripts', scripts.length);
-for (const s of scripts) {
-  try { const js = await (await fetch(s, { headers: { 'User-Agent': UA } })).text();
-    const f = [...new Set([...js.matchAll(/["'`]([^"'`]{0,60}(?:static-draws|service-draw|draws\/|\.zip)[^"'`]{0,80})["'`]/g)].map(m => m[1]))];
-    if (f.length) console.log(s.split('/').pop(), '=>', f.slice(0, 10).join(' | ')); } catch (e) { /* suivant */ }
+// Diagnostic manuel (0.42.1) : ce que renvoie VigiEau pour quelques communes. N'écrit rien.
+const UA = 'Mozilla/5.0 (Linux; Android 14) diagnostic/1.0';
+for (const [n, lon, lat, c] of [['Rennes', -1.68, 48.111, '35238'], ['Chateauneuf-du-Faou', -3.818, 48.188, '29027'], ['Troyes', 4.074, 48.297, '10387']]) {
+  try {
+    const r = await fetch(`https://api.vigieau.gouv.fr/api/zones?lon=${lon}&lat=${lat}&commune=${c}&profil=particulier`, { headers: { 'User-Agent': UA } });
+    const t = await r.text();
+    console.log(`== ${n} HTTP ${r.status} ${t.length} car.`);
+    let j; try { j = JSON.parse(t); } catch (e) { console.log(t.slice(0, 300)); continue; }
+    const list = Array.isArray(j) ? j : [j];
+    for (const z of list) console.log(JSON.stringify({ id: z.id, nom: z.nom, type: z.type, niveauGravite: z.niveauGravite, keys: Object.keys(z).join(','), arrete: z.arrete && { debut: z.arrete.dateDebutValidite, fin: z.arrete.dateFinValidite } }));
+  } catch (e) { console.log(n, 'erreur', e.message); }
 }
